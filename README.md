@@ -177,7 +177,7 @@ Note: These examples assume you include the appropriate public headers used in y
 Allocate a host-only arena and perform allocations with a chosen backend.
 
 ```cpp
-#include <PMimalloc/builders.hpp>
+#include <pmimalloc/builders.hpp>
 
 int main() {
     // Default resource: simple<Resource<Context<not_pinned<host_memory<base>>, backend_none>, ext_mimalloc>>
@@ -202,7 +202,7 @@ int main() {
 Map host allocations to a device-mirrored range. You allocate on the host side; the mirroring layer provides an equivalent device pointer via a fixed offset into the device arena.
 
 ```cpp
-#include <PMimalloc/builders.hpp>
+#include <pmimalloc/builders.hpp>
 
 int main() {
     auto builder = resource_builder<>()
@@ -226,8 +226,8 @@ Note: The mirroring layer expects the underlying memory to expose both host and 
 For RMA backends (e.g., libfabric), a handler provides a consistent interface to query keys and offsets.
 
 ```cpp
-#include <PMimalloc/builders.hpp>
-#include <PMimalloc/handler.hpp>
+#include <pmimalloc/builders.hpp>
+#include <pmimalloc/handler.hpp>
 
 int main() {
     // Build a context/handler chain with memory registration enabled (backend)
@@ -252,7 +252,7 @@ int main() {
 You can wrap a resource’s arena into a C++ polymorphic allocator.
 
 ```cpp
-#include <PMimalloc/builders.hpp>
+#include <pmimalloc/builders.hpp>
 #include <memory_resource>
 #include <vector>
 
