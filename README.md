@@ -1,6 +1,6 @@
-# PMIMalloc — Pluggable Memory Resources with Optional Registration, Pinning, and Mirroring
+# PMimalloc — Pluggable Memory Resources with Optional Registration, Pinning, and Mirroring
 
-PMIMalloc is a C++ library that composes memory resources out of orthogonal layers:
+PMimalloc is a C++ library that composes memory resources out of orthogonal layers:
 - Base memory (host, host+device, user memory, etc.)
 - Optional pinning (none, mlock, CUDA-pinned)
 - Optional registration backend (libfabric, UCX, or none)
@@ -55,17 +55,17 @@ The core idea is to nest types to form a single “resource”:
 Mirrored<Resource<Context<Pinned<Memory<Base>>,[Backend]>, Allocator>>
 ```
 
-Default templates (see include/pmimalloc/builders.hpp) define sensible layers that you can override fluently with a builder.
+Default templates (see include/PMimalloc/builders.hpp) define sensible layers that you can override fluently with a builder.
 
-- Base: include/pmimalloc/base.hpp — holds address/size/numa node
-- Memory: include/pmimalloc/memory.hpp (host, host+device, user memory, etc.)
-- Pinning: include/pmimalloc/pinning.hpp (not_pinned, pinned, cuda_pinned)
-- Context: include/pmimalloc/context.hpp (ties memory to registration backend)
-- Resource: include/pmimalloc/resource.hpp (wraps allocator, inherits Context)
-- Mirroring: include/pmimalloc/mirroring.hpp (maps host allocations to device range)
-- Allocators: include/pmimalloc/ext_mimalloc.hpp or include/pmimalloc/ext_stdmalloc.hpp
-- NUMA utilities: include/pmimalloc/numa.hpp, src/numa.cpp
-- Logging: include/pmimalloc/log.hpp, src/log.cpp
+- Base: include/PMimalloc/base.hpp — holds address/size/numa node
+- Memory: include/PMimalloc/memory.hpp (host, host+device, user memory, etc.)
+- Pinning: include/PMimalloc/pinning.hpp (not_pinned, pinned, cuda_pinned)
+- Context: include/PMimalloc/context.hpp (ties memory to registration backend)
+- Resource: include/PMimalloc/resource.hpp (wraps allocator, inherits Context)
+- Mirroring: include/PMimalloc/mirroring.hpp (maps host allocations to device range)
+- Allocators: include/PMimalloc/ext_mimalloc.hpp or include/PMimalloc/ext_stdmalloc.hpp
+- NUMA utilities: include/PMimalloc/numa.hpp, src/numa.cpp
+- Logging: include/PMimalloc/log.hpp, src/log.cpp
 
 ## Build and Dependencies
 
@@ -91,7 +91,7 @@ Example system packages (Linux):
 
 CMake options (toggle ON/OFF as needed):
 - ENABLE_LOGGING: Enable internal logging macros (default OFF)
-- PMIMALLOC_WITH_MIMALLOC: Enable mimalloc backend (default OFF)
+- PMimALLOC_WITH_MIMALLOC: Enable mimalloc backend (default OFF)
 - WITH_LIBFABRIC: Enable libfabric backend and registration (default OFF)
 - WITH_UCX: Enable UCX backend stubs (default OFF)
 - WITH_CUDA: Enable CUDA pinning (default OFF)
@@ -106,7 +106,7 @@ These options control preprocessor guards used across the code.
 - Configure/build:
 
 ```
-cmake -S . -B build -DENABLE_LOGGING=ON -DPMIMALLOC_WITH_MIMALLOC=OFF -DWITH_LIBFABRIC=OFF -DWITH_UCX=OFF -DWITH_CUDA=OFF
+cmake -S . -B build -DENABLE_LOGGING=ON -DPMimALLOC_WITH_MIMALLOC=OFF -DWITH_LIBFABRIC=OFF -DWITH_UCX=OFF -DWITH_CUDA=OFF
 cmake --build build -j
 ```
 
@@ -120,7 +120,7 @@ ctest --test-dir build
 - Configure:
 
 ```
-cmake -S . -B build -DPMIMALLOC_WITH_MIMALLOC=ON
+cmake -S . -B build -DPMimALLOC_WITH_MIMALLOC=ON
 cmake --build build -j
 ```
 
@@ -177,7 +177,7 @@ Note: These examples assume you include the appropriate public headers used in y
 Allocate a host-only arena and perform allocations with a chosen backend.
 
 ```cpp
-#include <pmimalloc/builders.hpp>
+#include <PMimalloc/builders.hpp>
 
 int main() {
     // Default resource: simple<Resource<Context<not_pinned<host_memory<base>>, backend_none>, ext_mimalloc>>
@@ -202,7 +202,7 @@ int main() {
 Map host allocations to a device-mirrored range. You allocate on the host side; the mirroring layer provides an equivalent device pointer via a fixed offset into the device arena.
 
 ```cpp
-#include <pmimalloc/builders.hpp>
+#include <PMimalloc/builders.hpp>
 
 int main() {
     auto builder = resource_builder<>()
@@ -226,8 +226,8 @@ Note: The mirroring layer expects the underlying memory to expose both host and 
 For RMA backends (e.g., libfabric), a handler provides a consistent interface to query keys and offsets.
 
 ```cpp
-#include <pmimalloc/builders.hpp>
-#include <pmimalloc/handler.hpp>
+#include <PMimalloc/builders.hpp>
+#include <PMimalloc/handler.hpp>
 
 int main() {
     // Build a context/handler chain with memory registration enabled (backend)
@@ -252,7 +252,7 @@ int main() {
 You can wrap a resource’s arena into a C++ polymorphic allocator.
 
 ```cpp
-#include <pmimalloc/builders.hpp>
+#include <PMimalloc/builders.hpp>
 #include <memory_resource>
 #include <vector>
 
