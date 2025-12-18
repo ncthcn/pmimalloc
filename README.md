@@ -1,4 +1,4 @@
-# PMimalloc — Pluggable Memory Resources with Optional Registration, Pinning, and Mirroring
+# PMimalloc — Memory Allocator with Pluggable Memory Resources and Optional Registration, Pinning, and Mirroring
 
 PMimalloc is a C++ library that composes memory resources out of orthogonal layers:
 - Base memory (host, host+device, user memory, etc.)
