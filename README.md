@@ -35,6 +35,7 @@ This README explains how to build, configure, and use the library and its tests.
   - Handlers (registered memory)
   - Using std::pmr with resources
 - Tests
+- Benchmarks
 - Notes on UCX integration
 - Project Structure
 
@@ -279,6 +280,26 @@ ctest --test-dir build --output-on-failure
 - test_mirror: Exercises mirrored allocations.
 
 You can adjust arena sizes and number of allocations in the tests as needed for your system.
+
+## Benchmarks
+
+The plots below compare pmimalloc against three widely-used general-purpose allocators — [mimalloc](https://github.com/microsoft/mimalloc), [jemalloc](https://github.com/jemalloc/jemalloc), and [tcmalloc](https://github.com/google/tcmalloc) — as well as the system `std::malloc`. The benchmark repeatedly performs allocations across an increasing number of threads to measure both throughput and memory overhead under concurrent load.
+
+![Benchmark plots: allocation time and memory efficiency across allocators](Plots.png)
+
+### Time dedicated to allocations
+
+- **X axis — Threads**: number of concurrent threads performing allocations (1 to 36).
+- **Y axis — Duration (ms)**: wall-clock time for the entire allocation workload to complete. Lower is better.
+
+The **left plot** includes all five allocators. `std::malloc` stands out as a significant outlier: at low thread counts it reaches over 16 000 ms, roughly 1.5–1.8× slower than the others, due to its global lock contention. The **right plot** removes `std::malloc` to reveal the finer differences among the remaining allocators. pmimalloc is competitive throughout, tracking closely with mimalloc and tcmalloc, while jemalloc edges ahead at high thread counts.
+
+### Memory efficiency
+
+- **X axis — Threads**: number of concurrent threads (1 to 36).
+- **Y axis — RSS max / max size allocated**: ratio of peak resident set size (RSS) to the maximum amount of memory the workload actually requested. A ratio of 1.0 would mean zero allocator overhead; values above 1.0 reflect fragmentation and internal bookkeeping. Lower is better.
+
+The **left plot** again shows `std::malloc` as a clear outlier, reaching a ratio above 2.5 at high thread counts — meaning it holds more than twice the memory actually needed. The **right plot** (std::malloc excluded) shows that pmimalloc sits comfortably alongside mimalloc, jemalloc, and tcmalloc, all clustering between approximately 1.075 and 1.225. This confirms that pmimalloc introduces no significant additional memory overhead compared to production-grade general-purpose allocators.
 
 ## Notes on UCX Integration
 
