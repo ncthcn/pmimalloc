@@ -28,7 +28,8 @@ jobs:
 
       # Mirror tests need a physical GPU, so run host tests only. Pinned
       # arenas mlock more memory than the runner's default memlock limit.
-      - name: Run host tests
+      - name: Run host tests and example
         run: |
           sudo bash -c 'ulimit -l unlimited && \
-            ctest --test-dir build -R "^test_host" --output-on-failure'
+            ctest --test-dir build -R "^test_host" --output-on-failure && \
+            ./build/bin/host_arena'

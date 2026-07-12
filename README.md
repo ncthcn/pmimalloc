@@ -78,6 +78,9 @@ int main()
 }
 ```
 
+This example is built as [`examples/host_arena.cpp`](examples/host_arena.cpp)
+(binary `build/bin/host_arena`) and run in CI.
+
 Other builder methods: `use_stdmalloc()` (std::pmr pools instead of mimalloc),
 `cuda_pin()`, `on_host_and_device()` (mirrored host/device arenas), and
 `register_memory()` when built with an RDMA backend — after which
