@@ -33,6 +33,11 @@
       cache. Steal code from MPI if time permits.
 */
 
+/** @brief STL-compatible allocator serving allocations of T from a composed
+ * resource (see builders.hpp). Holds the resource in a shared_ptr, so copies
+ * are cheap and share the same arena.
+ * @tparam T value type
+ * @tparam Resource composed resource type, e.g. decltype(rb.build()) */
 template <typename T, typename Resource>
 class pmimallocator
 {
@@ -101,7 +106,7 @@ public:
     /* Destructor */
     ~pmimallocator() {}
 
-    /* Allocate */
+    /** @brief Allocate storage for n objects of T from the arena. */
     [[nodiscard]] T* allocate(const std::size_t n)
     {
         if (n > m_sptr_resource->get_size() / sizeof(T))
@@ -112,14 +117,15 @@ public:
         return static_cast<pointer>(m_sptr_resource->allocate(n * sizeof(T)));
     }
 
-    /* Deallocate */
-
+    /** @brief Return storage to the arena; n may be omitted (mimalloc backend). */
     void deallocate(T* p, std::size_t n = 0)
     {
         void* tmp = static_cast<void*>(p);
         return m_sptr_resource->deallocate(tmp, n);
     }
 
+    /** @brief Remote key/offset of ptr for RMA, when the resource was built
+     * with register_memory() and a network backend. */
     auto get_key(T* ptr)
     {
         return m_sptr_resource->get_key(ptr);

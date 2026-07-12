@@ -1,5 +1,9 @@
 #pragma once
 
+/** @brief Interface to registered memory that is allocated elsewhere: exposes
+ * the context chain (pinning, registration) without an allocator on top.
+ * get_key(ptr) returns the remote key/offset a peer needs for RMA operations.
+ * Build one with handler_builder (see builders.hpp). */
 template <typename Context>
 class handler : public Context
 {

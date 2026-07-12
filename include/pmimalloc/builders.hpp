@@ -113,12 +113,14 @@ private:
     }
 
 public:
+    /** @brief Use a mimalloc arena as the allocator backend (the default). */
     constexpr auto use_mimalloc(void) const
     {
         // pinned resources are stored at position 3 in the resource nest
         return updated<1, resource, ext_mimalloc>();
     }
 
+    /** @brief Use std::pmr pools as the allocator backend instead of mimalloc. */
     constexpr auto use_stdmalloc(void) const
     {
         // pinned resources are stored at position 3 in the resource nest
@@ -126,6 +128,8 @@ public:
     }
 
 #if WITH_MPI || WITH_LIBFABRIC || WITH_UCX
+    /** @brief Register the arena with the network backend chosen at build time;
+     * get_key(ptr) then returns the remote key/offset for RMA operations. */
     constexpr auto register_memory(void) const
     {
         // registered resources are stored at position 2 in the resource nest
@@ -133,6 +137,7 @@ public:
     }
 #endif
 
+    /** @brief mlock the whole arena so it cannot be paged out. */
     constexpr auto pin(void) const
     {
         // pinned resources are stored at position 3 in the resource nest
@@ -140,6 +145,7 @@ public:
     }
 
 #if WITH_CUDA
+    /** @brief CUDA-pin the whole arena (cudaHostRegister). */
     constexpr auto cuda_pin(void) const
     {
         // pinned resources are stored at position 3 in the resource nest
@@ -147,12 +153,15 @@ public:
     }
 #endif
 
+    /** @brief Allocate the arena in host memory (the default). */
     constexpr auto on_host(void) const
     {
         // memory resources are stored at position 4 in the resource nest
         return updated<4, host_memory>();
     }
 
+    /** @brief Allocate equal-size host and device arenas; allocations return
+     * host pointers whose device mirror sits at the same offset. */
     constexpr auto on_host_and_device(void) const
     {
         // memory resources are stored at position 4 in the resource nest
@@ -160,6 +169,7 @@ public:
         return tmp.template updated<4, host_device_memory>();
     }
 
+    /** @brief Mirror a user-provided memory region on the device. */
     constexpr auto mirror_user_memory(void) const
     {
         // memory resources are stored at position 4 in the resource nest
@@ -167,23 +177,29 @@ public:
         return tmp.template updated<4, mirrored_user_memory>();
     }
 
+    /** @brief Build the resource on a user-provided memory region. */
     constexpr auto use_host_memory(void) const
     {
         // memory resources are stored at position 4 in the resource nest
         return updated<4, user_host_memory>();
     }
 
+    /** @brief Reset to the default resource (mimalloc on unpinned host memory). */
     constexpr resource_builder<> clear(void) const
     {
         return {};
     }
 
+    /** @brief Construct the resource on the heap; `args` are forwarded to the
+     * innermost layer (typically the arena size, or pointer + size). */
     template <typename... Args>
     constexpr resource_shared_t sbuild(Args... args) const
     {
         return std::make_shared<resource_t>(std::move(args)...);
     }
 
+    /** @brief Construct the composed resource; `args` are forwarded to the
+     * innermost layer (typically the arena size, or pointer + size). */
     template <typename... Args>
     constexpr resource_t build(Args... args) const
     {
@@ -214,6 +230,8 @@ public:
 
 using default_handler = handler<context<not_pinned<user_host_memory<base>>, backend_none>>;
 
+/** @brief Builds a handler: a resource chain without an allocator, for
+ * pinning/registering memory that is managed elsewhere (see handler.hpp). */
 template <typename Handler = default_handler>
 struct handler_builder
 {
@@ -273,6 +291,7 @@ struct handler_builder
 ------------------------------------------------------------------
 */
 
+/** @brief Wrap a resource's arena in a std::pmr::monotonic_buffer_resource. */
 template <typename Resource>
 std::pmr::monotonic_buffer_resource make_mbuffer(const Resource& r)
 {
