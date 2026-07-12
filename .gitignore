@@ -1,3 +1,17 @@
-.vscode
+# Build directories
+build/
+build-*/
+cmake-build-*/
 
+# Fetched external projects (see cmake/external.cmake)
+extern/
+
+# Generated files
 include/config.hpp
+compile_commands.json
+
+# Editors / OS
+.vscode
+.idea/
+.cache/
+.DS_Store
