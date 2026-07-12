@@ -1,311 +1,133 @@
-# PMimalloc — Memory Allocator with Pluggable Memory Resources and Optional Registration, Pinning, and Mirroring
-
-PMimalloc is a C++ library that composes memory resources out of orthogonal layers:
-- Base memory (host, host+device, user memory, etc.)
-- Optional pinning (none, mlock, CUDA-pinned)
-- Optional registration backend (libfabric, UCX, or none)
-- Optional “mirroring” behavior (host/device pointer translation)
-- Allocator backends (mimalloc arena-backed or std::pmr pool-backed)
-
-It provides:
-- A resource builder that produces nested, policy-based resources for allocation
-- A handler for interacting with registered memory (RMA-style offsets/keys)
-- Optional NUMA-aware allocation/utilities
-- Optional logging
-- Tests to exercise host and mirrored allocations
-
-This README explains how to build, configure, and use the library and its tests.
-
-## Contents
-
-- Features
-- Architecture at a Glance
-- Build and Dependencies
-- Configuration Options
-- Quick Start
-  - Minimal build
-  - With mimalloc
-  - With libfabric
-  - With UCX
-  - With CUDA pinning
-  - With NUMA tools and logging
-- Usage Examples
-  - Resource builder (host memory)
-  - Mirrored allocations (host+device)
-  - Handlers (registered memory)
-  - Using std::pmr with resources
-- Tests
-- Benchmarks
-- Notes on UCX integration
-- Project Structure
-
-## Features
-
-- Composable memory resource chain with layers: Mirroring → Resource → Context → Pinning → Memory → Base
-- Pluggable allocator backend: mimalloc (arena) or C++ std::pmr pools
-- Optional memory pinning (mlock, CUDA)
-- Optional memory registration backends (libfabric now; UCX scaffolding present)
-- NUMA tools for querying nodes, allocating/freeing pages on specific nodes
-- Logging facility with per-thread buffering
-
-## Architecture at a Glance
-
-The core idea is to nest types to form a single “resource”:
-
-```
-Mirrored<Resource<Context<Pinned<Memory<Base>>,[Backend]>, Allocator>>
-```
-
-Default templates (see include/PMimalloc/builders.hpp) define sensible layers that you can override fluently with a builder.
-
-- Base: include/PMimalloc/base.hpp — holds address/size/numa node
-- Memory: include/PMimalloc/memory.hpp (host, host+device, user memory, etc.)
-- Pinning: include/PMimalloc/pinning.hpp (not_pinned, pinned, cuda_pinned)
-- Context: include/PMimalloc/context.hpp (ties memory to registration backend)
-- Resource: include/PMimalloc/resource.hpp (wraps allocator, inherits Context)
-- Mirroring: include/PMimalloc/mirroring.hpp (maps host allocations to device range)
-- Allocators: include/PMimalloc/ext_mimalloc.hpp or include/PMimalloc/ext_stdmalloc.hpp
-- NUMA utilities: include/PMimalloc/numa.hpp, src/numa.cpp
-- Logging: include/PMimalloc/log.hpp, src/log.cpp
-
-## Build and Dependencies
-
-The project uses CMake. At a minimum you need:
-- A C++17 compiler
-- fmt (headers and library)
-- For optional features:
-  - mimalloc: libmimalloc and headers
-  - libfabric: libfabric and headers
-  - UCX: UCX (ucx/ucp headers and libs)
-  - CUDA: CUDA toolkit for cuda_runtime.h (if using CUDA pinning)
-  - libnuma (Linux): for NUMA features
-
-Example system packages (Linux):
-- fmt: libfmt-dev (or build from source)
-- libfabric: libfabric-dev
-- UCX: libucx-dev
-- mimalloc: mimalloc-dev
-- NUMA: libnuma-dev
-- CUDA (optional): CUDA toolkit
-
-## Configuration Options
-
-CMake options (toggle ON/OFF as needed):
-- ENABLE_LOGGING: Enable internal logging macros (default OFF)
-- PMimALLOC_WITH_MIMALLOC: Enable mimalloc backend (default OFF)
-- WITH_LIBFABRIC: Enable libfabric backend and registration (default OFF)
-- WITH_UCX: Enable UCX backend stubs (default OFF)
-- WITH_CUDA: Enable CUDA pinning (default OFF)
-- NUMA_THROWS: Make NUMA tools throw on errors (default OFF)
-
-These options control preprocessor guards used across the code.
-
-## Quick Start
-
-### Minimal Build (std::pmr backend, no registration)
-- Dependencies: fmt
-- Configure/build:
-
-```
-cmake -S . -B build -DENABLE_LOGGING=ON -DPMimALLOC_WITH_MIMALLOC=OFF -DWITH_LIBFABRIC=OFF -DWITH_UCX=OFF -DWITH_CUDA=OFF
-cmake --build build -j
-```
-
-Run tests:
-```
-ctest --test-dir build
-```
-
-### Build with mimalloc
-- Requires mimalloc library and headers.
-- Configure:
-
-```
-cmake -S . -B build -DPMimALLOC_WITH_MIMALLOC=ON
-cmake --build build -j
-```
-
-### Build with libfabric registration
-- Requires libfabric.
-- Configure:
-
-```
-cmake -S . -B build -DWITH_LIBFABRIC=ON
-cmake --build build -j
-```
-
-Note: The default builder uses a “backend_none”. To actually register memory, use the builder method register_memory() (see examples) or set WITH_LIBFABRIC and switch builder context.
-
-### Build with UCX (experimental scaffolding)
-- Requires UCX. Current UCX integration includes region/handle definitions and an rma_context scaffold. It is not yet wired into the default builders.
-- Configure:
-
-```
-cmake -S . -B build -DWITH_UCX=ON
-cmake --build build -j
-```
-
-### Build with CUDA pinning
-- Requires CUDA toolkit present.
-- Configure:
-
-```
-cmake -S . -B build -DWITH_CUDA=ON
-cmake --build build -j
-```
-
-Then use builder.cuda_pin() to get CUDA-pinned host memory.
-
-### Use NUMA tools and logging
-- Logging:
-
-```
-cmake -S . -B build -DENABLE_LOGGING=ON
-```
-
-- NUMA tools are compiled by default on Linux. To make failures throw:
-
-```
-cmake -S . -B build -DNUMA_THROWS=ON
-```
-
-## Usage Examples
-
-Note: These examples assume you include the appropriate public headers used in your build (builders, resource, mirroring, pinning, etc.).
-
-### Resource Builder: Host Memory
-
-Allocate a host-only arena and perform allocations with a chosen backend.
-
-```cpp
-#include <pmimalloc/builders.hpp>
-
-int main() {
-    // Default resource: simple<Resource<Context<not_pinned<host_memory<base>>, backend_none>, ext_mimalloc>>
-    // Replace allocator with std::pmr pool backend:
-    auto builder = resource_builder<>().use_stdmalloc().on_host();
-
-    // Build a resource with a given arena memory (addr, size)
-    // Typically you pass a host arena ptr and size to the Resource constructor
-    // If your resource allocates its own arena internally, pass the size instead.
-    std::size_t arena_size = 1ull << 26; // 64 MiB
-    auto res = builder.build(arena_size);
-
-    // Allocate some memory
-    void* p = res.allocate(4096);
-    // ...
-    res.deallocate(p, 4096); // some allocators require the size
-}
-```
-
-### Mirrored Allocations: Host + Device
-
-Map host allocations to a device-mirrored range. You allocate on the host side; the mirroring layer provides an equivalent device pointer via a fixed offset into the device arena.
-
-```cpp
-#include <pmimalloc/builders.hpp>
-
-int main() {
-    auto builder = resource_builder<>()
-        .on_host_and_device(); // mirrored layer on top of host+device memory
-
-    // Build with total arena size
-    std::size_t arena_size = 1ull << 27; // 128 MiB
-    auto res = builder.build(arena_size);
-
-    // Allocate on host, get device-mirrored pointer
-    void* dev_ptr = res.allocate(1<<20); // 1 MiB
-    // ...
-    res.deallocate(dev_ptr, 1<<20);
-}
-```
-
-Note: The mirroring layer expects the underlying memory to expose both host and device arena addresses of equal size. Ensure the underlying memory resource initializes both sides accordingly.
-
-### Handlers: Registered Memory
-
-For RMA backends (e.g., libfabric), a handler provides a consistent interface to query keys and offsets.
-
-```cpp
-#include <pmimalloc/builders.hpp>
-#include <pmimalloc/handler.hpp>
-
-int main() {
-    // Build a context/handler chain with memory registration enabled (backend)
-    auto h_builder = handler_builder<>()
-        .register_memory()  // WITH_LIBFABRIC or other backend must be enabled at build time
-        .pin();             // Optional: mlock pinning
-
-    std::size_t arena_size = 1ull << 27;
-    auto h = h_builder.build(arena_size);
-
-    // Get remote key for a pointer within the arena
-    int* arr = static_cast<int*>(h.get_address());
-    auto key = h.get_key(arr + 128); // offset within arena
-
-    // Use key.remote_key and key.offset for RMA operations in your transport.
-    (void)key;
-}
-```
-
-### Using std::pmr with Resources
-
-You can wrap a resource’s arena into a C++ polymorphic allocator.
-
-```cpp
-#include <pmimalloc/builders.hpp>
-#include <memory_resource>
-#include <vector>
-
-int main() {
-    auto r = resource_builder<>().use_stdmalloc().on_host().build(1<<26);
-    std::pmr::monotonic_buffer_resource mbuf(r.get_address(), r.get_size());
-    std::pmr::polymorphic_allocator<int> pa(&mbuf);
-    std::pmr::vector<int> v(pa);
-    v.resize(1000);
-}
-```
-
-## Tests
-
-The repository provides several test executables (see test/test_host.cpp, test/test_mirror.cpp and test/CMakeLists.txt). Build and run:
-
-```
-cmake -S . -B build -DENABLE_LOGGING=ON
-cmake --build build -j
-ctest --test-dir build --output-on-failure
-```
-
-- test_host: Exercises a host-only allocator across arenas/threads.
-- test_mirror: Exercises mirrored allocations.
-
-You can adjust arena sizes and number of allocations in the tests as needed for your system.
-
-## Benchmarks
-
-The plots below compare pmimalloc against three widely-used general-purpose allocators — [mimalloc](https://github.com/microsoft/mimalloc), [jemalloc](https://github.com/jemalloc/jemalloc), and [tcmalloc](https://github.com/google/tcmalloc) — as well as the system `std::malloc`. The benchmark repeatedly performs allocations across an increasing number of threads to measure both throughput and memory overhead under concurrent load.
+# pmimalloc
+
+[![CI](https://github.com/ncthcn/pmimalloc/actions/workflows/ci.yml/badge.svg)](https://github.com/ncthcn/pmimalloc/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
+A composable C++ memory allocator for HPC that unifies fast multithreaded host
+allocation (mimalloc arenas) with memory pinning, host/device (GPU) mirroring, and
+RDMA memory registration and key exchange.
+
+Allocation-heavy HPC codes that talk to the network or a GPU need memory that is
+pinned, registered with the NIC, and sometimes mirrored on the device — properties
+usually bolted on with separate, ad-hoc code paths. pmimalloc composes them as
+orthogonal compile-time layers around a preallocated arena, so pinning and
+registration are paid once per arena instead of once per allocation, and the hot
+allocation path stays as fast as a general-purpose allocator.
+
+## Key results
+
+In a multithreaded allocation benchmark (1–36 threads), pmimalloc matches
+production general-purpose allocators — [mimalloc](https://github.com/microsoft/mimalloc),
+[jemalloc](https://github.com/jemalloc/jemalloc), [tcmalloc](https://github.com/google/tcmalloc) —
+on both throughput and memory overhead, while adding the pinning / registration /
+mirroring capabilities they lack:
 
 ![Benchmark plots: allocation time and memory efficiency across allocators](Plots.png)
 
-### Time dedicated to allocations
+- **Allocation time** (top row, lower is better): `std::malloc` is the clear
+  outlier, exceeding 16 000 ms at low thread counts due to global lock contention.
+  With it removed (top right), pmimalloc tracks mimalloc and tcmalloc closely
+  across all thread counts; jemalloc edges ahead at high thread counts.
+- **Memory efficiency** (bottom row, peak RSS / peak bytes requested, lower is
+  better): `std::malloc` exceeds 2.5× at high thread counts. pmimalloc clusters
+  with mimalloc, jemalloc, and tcmalloc between roughly 1.075 and 1.225 —
+  no significant extra overhead from the added layers.
 
-- **X axis — Threads**: number of concurrent threads performing allocations (1 to 36).
-- **Y axis — Duration (ms)**: wall-clock time for the entire allocation workload to complete. Lower is better.
+<!-- TODO(nathan): rerun benchmark and record methodology (machine, CPU, allocator
+versions, workload) — original run details were not kept. -->
 
-The **left plot** includes all five allocators. `std::malloc` stands out as a significant outlier: at low thread counts it reaches over 16 000 ms, roughly 1.5–1.8× slower than the others, due to its global lock contention. The **right plot** removes `std::malloc` to reveal the finer differences among the remaining allocators. pmimalloc is competitive throughout, tracking closely with mimalloc and tcmalloc, while jemalloc edges ahead at high thread counts.
+## Quickstart (Linux)
 
-### Memory efficiency
+Requires a C++20 compiler, CMake ≥ 3.14, and network access at configure time
+(mimalloc is fetched and built from source). On Debian/Ubuntu:
 
-- **X axis — Threads**: number of concurrent threads (1 to 36).
-- **Y axis — RSS max / max size allocated**: ratio of peak resident set size (RSS) to the maximum amount of memory the workload actually requested. A ratio of 1.0 would mean zero allocator overhead; values above 1.0 reflect fragmentation and internal bookkeeping. Lower is better.
+```sh
+sudo apt-get install -y libfmt-dev libnuma-dev libhwloc-dev nvidia-cuda-toolkit
 
-The **left plot** again shows `std::malloc` as a clear outlier, reaching a ratio above 2.5 at high thread counts — meaning it holds more than twice the memory actually needed. The **right plot** (std::malloc excluded) shows that pmimalloc sits comfortably alongside mimalloc, jemalloc, and tcmalloc, all clustering between approximately 1.075 and 1.225. This confirms that pmimalloc introduces no significant additional memory overhead compared to production-grade general-purpose allocators.
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DBACKEND=none -DMI_SKIP_COLLECT_ON_EXIT=ON
+cmake --build build -j
+ctest --test-dir build -R "^test_host" --output-on-failure
+```
 
-## Notes on UCX Integration
+The CUDA toolkit is required at build time; a physical GPU is only needed at
+runtime for mirrored / CUDA-pinned resources. `ctest --test-dir build` without
+the filter also runs the mirror tests, which need an NVIDIA GPU. Pinned arenas
+`mlock` their full size — raise `ulimit -l` if the pinned tests fail.
 
-The UCX backend in `src/ucx/` provides region/handle scaffolding and an rma_region that uses `ucp_mem_map` to register memory, optionally for device memory. A minimal `rma_context` stub is provided for creating regions but is not yet integrated into the default builder flow. To use UCX with RMA, you will typically:
-- Create and manage a `ucp_context_h` externally
-- Use `rma_region` to map/unmap host/device regions
-- Wire the registration stage into the builder (similar to libfabric’s backend) if desired
+## Usage
 
-Until that wiring is complete, you can use `rma_region` directly in UCX-based applications.
+Compose a resource with the builder, then use it through an STL-compatible
+allocator (this is exactly the pattern the tests exercise):
+
+```cpp
+#include <pmimalloc/allocator.hpp>
+
+int main()
+{
+    // mlock-pinned host arena with a mimalloc heap on top
+    resource_builder RB;
+    auto rb = RB.pin().on_host();
+    using resource_t = decltype(rb.build());
+
+    // STL-compatible allocator backed by a 128 MiB arena
+    pmimallocator<int, resource_t> alloc(rb, 1ull << 27);
+
+    int* p = alloc.allocate(1);
+    *p = 42;
+    alloc.deallocate(p);
+}
+```
+
+Other builder methods: `use_stdmalloc()` (std::pmr pools instead of mimalloc),
+`cuda_pin()`, `on_host_and_device()` (mirrored host/device arenas), and
+`register_memory()` when built with an RDMA backend — after which
+`alloc.get_key(ptr)` returns the remote key/offset for RMA operations.
+
+## Architecture
+
+A resource is a compile-time nest of policy layers; the builder swaps layers by
+position and `build(size)` constructs the whole chain:
+
+```
+Mirrored -- Resource -- Context -- Pinned -- Memory -- Base
+                \           \
+             Allocator     Backend
+```
+
+- Base: `include/pmimalloc/base.hpp` — address / size / NUMA node
+- Memory: `include/pmimalloc/memory.hpp` — host, host+device, user memory
+- Pinned: `include/pmimalloc/pinning.hpp` — none, `mlock`, CUDA-pinned
+- Context: `include/pmimalloc/context.hpp` — registers memory with a backend
+  (libfabric in `src/libfabric/`, UCX scaffolding in `src/ucx/`)
+- Resource: `include/pmimalloc/resource.hpp` — attaches the allocator
+  (`ext_mimalloc.hpp` arena or `ext_stdmalloc.hpp` std::pmr pools)
+- Mirrored: `include/pmimalloc/mirroring.hpp` — host/device pointer translation
+  by fixed offset into a device arena of equal size
+
+## Configuration
+
+CMake cache variables:
+
+- `BACKEND` — registration backend: `none` (default), `libfabric` (functional,
+  needs libfabric + Boost), `ucx` / `mpi` (scaffolding, not wired into builders)
+- `ENABLE_LOGGING` — per-thread buffered logging to stderr (default OFF)
+- `MI_SKIP_COLLECT_ON_EXIT` — must be set `ON` (forwarded to the mimalloc build)
+- `BUILD_TESTING` — build the test executables (default ON)
+
+## Tests
+
+`test/` contains host and mirror test executables, each in single/multi-thread
+and single/multi-arena variants, plus std::pmr-backed variants. Each allocates
+from concurrent threads, writes distinct values, and verifies them on readback.
+CI builds the library and runs the host tests on every push.
+
+## Status and platforms
+
+Linux only. The libfabric registration backend is functional; UCX has
+region/handle scaffolding (`src/ucx/`) usable directly via `rma_region`, but is
+not yet wired into the builders. Known limitations: arenas have a fixed size
+(they cannot grow), and `mmap`/`mlock` limits cap arena sizes.
+
+## License
+
+MIT — see [LICENSE](LICENSE).
