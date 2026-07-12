@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libfmt-dev libnuma-dev libhwloc-dev nvidia-cuda-toolkit
+
+      - name: Configure
+        run: >
+          cmake -S . -B build
+          -DCMAKE_BUILD_TYPE=Release
+          -DBACKEND=none
+          -DMI_SKIP_COLLECT_ON_EXIT=ON
+
+      - name: Build
+        run: cmake --build build -j"$(nproc)"
+
+      # Mirror tests need a physical GPU, so run host tests only. Pinned
+      # arenas mlock more memory than the runner's default memlock limit.
+      - name: Run host tests
+        run: |
+          sudo bash -c 'ulimit -l unlimited && \
+            ctest --test-dir build -R "^test_host" --output-on-failure'
