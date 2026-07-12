@@ -173,9 +173,6 @@ else()
     pmimalloc_${BACKEND} PUBLIC PMIMALLOC_WITH_MIMALLOC WITH_${BACKEND_U}
   )
 endif()
-set_target_properties(
-  pmimalloc_${BACKEND} PROPERTIES PUBLIC_HEADER include/allocator.h
-)
 target_include_directories(
   pmimalloc_${BACKEND} PUBLIC include src/${BACKEND} ext/mimalloc/include
 )
@@ -188,11 +185,10 @@ target_link_libraries(
 install(
   TARGETS pmimalloc_${BACKEND}
   LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-  PUBLIC_HEADER DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-install(FILES ${CMAKE_BINARY_DIR}/pmimalloc_${BACKEND}.pc
-        DESTINATION ${CMAKE_INSTALL_DATAROOTDIR}/pkgconfig
+install(DIRECTORY include/pmimalloc
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
 if(${BACKEND} STREQUAL "libfabric")
