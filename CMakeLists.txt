@@ -134,7 +134,8 @@ get_external_project(
   GIT_REPO
   "https://github.com/microsoft/mimalloc"
   GIT_TAG
-  "master"
+  "v2.2.7" # mimalloc's master branch no longer exists; pin the v2 API line
+
   PREFER_LOCAL # we want to debug mimalloc, so prefer building locally
 )
 
